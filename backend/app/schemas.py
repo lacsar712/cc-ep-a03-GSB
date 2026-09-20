@@ -98,3 +98,28 @@ class LineageOut(BaseModel):
     finished_at: datetime | None
     started_by: str
     version: int
+
+
+class MetricCompareRow(BaseModel):
+    name: str
+    in_a: bool
+    in_b: bool
+    a_value: float | None
+    a_step: int | None
+    b_value: float | None
+    b_step: int | None
+    value_differs: bool
+
+
+class CompareDiff(BaseModel):
+    code_commit_same: bool
+    dataset_same: bool
+    metric_names_only_a: list[str]
+    metric_names_only_b: list[str]
+    metrics: list[MetricCompareRow]
+
+
+class CompareOut(BaseModel):
+    a: LineageOut
+    b: LineageOut
+    diff: CompareDiff

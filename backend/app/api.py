@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import authenticate_user, create_access_token, get_current_user, require_researcher
+from app.compare import build_compare_diff
 from app.cqrs import (
     ConflictError,
     DomainError,
@@ -20,6 +21,7 @@ from app.models import RunProjection
 from app.schemas import (
     AbortRunCommand,
     AttachArtifactCommand,
+    CompareOut,
     CompleteRunCommand,
     EventOut,
     LineageOut,
@@ -35,6 +37,25 @@ router = APIRouter(prefix="/api")
 
 def _handle_domain(exc: DomainError) -> None:
     raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+
+def _to_lineage_out(proj: RunProjection) -> LineageOut:
+    return LineageOut(
+        run_id=proj.id,
+        project=proj.project,
+        name=proj.name,
+        status=proj.status,
+        code_commit_sha=proj.code_commit_sha,
+        dataset_content_sha256=proj.dataset_content_sha256,
+        artifacts=proj.artifacts_json or [],
+        metrics=proj.metrics_json or [],
+        result_summary=proj.result_summary,
+        abort_reason=proj.abort_reason,
+        started_at=proj.started_at,
+        finished_at=proj.finished_at,
+        started_by=proj.started_by,
+        version=proj.version,
+    )
 
 
 @router.get("/health")
@@ -208,19 +229,23 @@ def get_lineage(
     proj = db.get(RunProjection, run_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Run 不存在")
-    return LineageOut(
-        run_id=proj.id,
-        project=proj.project,
-        name=proj.name,
-        status=proj.status,
-        code_commit_sha=proj.code_commit_sha,
-        dataset_content_sha256=proj.dataset_content_sha256,
-        artifacts=proj.artifacts_json or [],
-        metrics=proj.metrics_json or [],
-        result_summary=proj.result_summary,
-        abort_reason=proj.abort_reason,
-        started_at=proj.started_at,
-        finished_at=proj.finished_at,
-        started_by=proj.started_by,
-        version=proj.version,
+    return _to_lineage_out(proj)
+
+
+@router.get("/compare", response_model=CompareOut)
+def compare_runs(
+    run_a: UUID = Query(...),
+    run_b: UUID = Query(...),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(get_current_user),
+):
+    proj_a = db.get(RunProjection, run_a)
+    proj_b = db.get(RunProjection, run_b)
+    missing = [str(rid) for rid, p in ((run_a, proj_a), (run_b, proj_b)) if p is None]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Run 不存在: {', '.join(missing)}")
+    return CompareOut(
+        a=_to_lineage_out(proj_a),
+        b=_to_lineage_out(proj_b),
+        diff=build_compare_diff(proj_a, proj_b),
     )

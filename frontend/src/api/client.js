@@ -77,4 +77,9 @@ export async function getLineage(id) {
   return data
 }
 
+export async function compareRuns(runA, runB) {
+  const { data } = await api.get('/compare', { params: { run_a: runA, run_b: runB } })
+  return data
+}
+
 export default api
